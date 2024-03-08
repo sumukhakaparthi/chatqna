@@ -9,9 +9,12 @@ import firebase_admin
 from firebase_admin import credentials, auth
 import pyrebase
 import queue
+import redis
 from pinecone import Pinecone
+from langfuse import Langfuse
 from langfuse.callback import CallbackHandler
 import google.generativeai as genai
+from code.utils import *
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -41,7 +44,25 @@ app = FastAPI(
 )
 
 ## Init - PineCone
-pc = Pinecone(api_key=os.environ.get('CUSTOM_VAR'))
+pc = Pinecone(
+    api_key=os.environ.get('pinecone_secret')
+    )
+
+## Init - Redis
+r = redis.Redis(
+    host=os.getenv('Redis_host'), 
+    port=os.getenv('Redis_port'),
+    username=os.getenv('Redis_uname'), # use your Redis user. More info https://redis.io/docs/management/security/acl/
+    password=os.getenv('Redis_api_key'), # use your Redis password
+    #ssl=True,ssl_certfile="./redis_user.crt",ssl_keyfile="./redis_user_private.key",ssl_ca_certs="./redis_ca.pem",
+)
+
+## Init - Langfuse
+langfuse = Langfuse(
+  secret_key=os.getenv('LANGFUSE_SECRET_KEY'),
+  public_key=os.getenv('LANGFUSE_PUBLIC_KEY'),
+  host=os.getenv('LANGFUSE_HOST')
+)
 
 ## Init - Firebase
 if not firebase_admin._apps:
@@ -51,23 +72,10 @@ if not firebase_admin._apps:
 
 
 firebase = pyrebase.initialize_app(firebaseConfig)
-security = HTTPBearer()
 
-
-async def get_current_user(token: str = Depends(security)):                  
-    try:
-        decoded_token = auth.verify_id_token(token.credentials)
-        
-        return decoded_token
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate your Bearer credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-@app.get("/protected")
-async def protected_route(current_user=Depends(get_current_user)):
+@app.get("/confirm_login", tags=['Login'],
+            description= "Run this endpoint to confirm your login status")
+async def confirm_login(current_user=Depends(get_current_user)):
     return {"message": "Auth Success | Welcome, user!"}
 
 @app.get("/")
