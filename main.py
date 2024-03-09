@@ -1,5 +1,7 @@
 #Imports
 import os
+import sys
+import logging
 from fastapi import FastAPI
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer
@@ -10,6 +12,7 @@ from firebase_admin import credentials, auth
 import pyrebase
 import queue
 import redis
+from langchain_google_genai import ChatGoogleGenerativeAI
 from pinecone import Pinecone
 from langfuse import Langfuse
 from langfuse.callback import CallbackHandler
@@ -18,7 +21,7 @@ from code.utils import *
 from dotenv import load_dotenv
 load_dotenv()
 
-
+logging.basicConfig(filename='rag.log', level=logging.DEBUG)
 
 #importing variables
 FIREBASE_WEB_API_KEY = os.environ.get("fbapiKey")
@@ -42,6 +45,10 @@ firebaseConfig = {
 app = FastAPI(
     title="RAG Chat"
 )
+
+@app.get("/")
+async def root():
+    return {"message":"Server OK"}
 
 ## Init - PineCone
 pc = Pinecone(
@@ -73,15 +80,30 @@ if not firebase_admin._apps:
 
 firebase = pyrebase.initialize_app(firebaseConfig)
 
+## Init - ChatGAI
+llm = ChatGoogleGenerativeAI(model="gemini-pro",
+                             google_api_key=os.getenv("maker_suit_api"))
+
 @app.get("/confirm_login", tags=['Login'],
             description= "Run this endpoint to confirm your login status")
 async def confirm_login(current_user=Depends(get_current_user)):
-    return {"message": "Auth Success | Welcome, user!"}
+    logging.info(f"{current_user['email']} has logged in")
+    return {"message": f"Auth Success | Welcome, {current_user['email']}!"}
 
-@app.get("/")
-async def root():
-    return {"message":"Server OK"}
+@app.get("/get_bearer_token", tags=['Login'],
+            description= "Run this endpoint to get bearer token")
+async def get_bearer_token(current_user=Depends(bearer_token_output)):
+    return current_user['access_token']
 
+@app.post("/orchestration/get_answers_to_query", tags=['Orchestration'])
+async def get_answers_to_query(query: str, current_user=Depends(bearer_token_auth)):
+    #add observabilty and collect user usage data
+    get_response = llm.invoke(query)
+    return get_response
+
+@app.post("/orchestration/query_vector_db", tags=['Orchestration'])
+async def query_vector_db(current_user=Depends(bearer_token_auth)):
+    pass
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,21 +1,25 @@
+# imports
 import os
-#from fastapi import FastAPI
 import json
 import requests
 from fastapi import Depends, HTTPException, status
 from typing import Annotated
 from fastapi.security import HTTPBearer, HTTPBasic, HTTPBasicCredentials
 from pydantic import SecretStr, EmailStr
-#import firebase_admin
-from firebase_admin import auth #credentials
+from firebase_admin import auth 
 from dotenv import load_dotenv
 load_dotenv()
-security = HTTPBasic() #HTTPBearer()
+
+# Init
+security = HTTPBasic() 
+security_b = HTTPBearer()
 
 FIREBASE_WEB_API_KEY = os.environ.get("fbapiKey")
 rest_api_url = os.environ.get("fb_auth_rest_api_url")
 rest_api_url_bearer = os.environ.get("fb_auth_rest_api_url_bearer")
 
+
+#Functions
 
 def sign_in_with_email_and_password(email , password):
     
@@ -74,6 +78,30 @@ async def get_current_user(credentials: Annotated[HTTPBasicCredentials, Depends(
             headers={"WWW-Authenticate": "Basic"},
         )
 
+async def bearer_token_output(credentials: Annotated[HTTPBasicCredentials, Depends(security)]):  
+    token = sign_in_with_email_and_password(email= credentials.username, 
+                                            password = credentials.password)      
+    try:
+        decoded_token = auth.verify_id_token(token['access_token'])
+        if decoded_token['email_verified'] == True:
+            return token
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate your credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
-
-
+async def bearer_token_auth(token: Annotated[str, Depends(security_b)]):  
+    try:
+        decoded_token = auth.verify_id_token(token.credentials)
+        if decoded_token['email_verified'] == True:
+            return decoded_token
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate your credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
